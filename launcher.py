@@ -1,3 +1,15 @@
+import ctypes
+import ctypes.util
+
+def set_process_name(name):
+    try:
+        libc = ctypes.CDLL(ctypes.util.find_library('c'))
+        libc.prctl(15, name.encode(), 0, 0, 0)
+    except:
+        pass
+
+set_process_name('focuslock')
+
 import gi
 import os
 import subprocess
