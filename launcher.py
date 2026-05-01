@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import ctypes
 import ctypes.util
 
@@ -128,7 +129,7 @@ class WarningDialog(Gtk.Dialog):
             f"• All keyboard shortcuts will be <b>disabled</b>\n"
             f"• Alt+F4, Alt+Tab, Super key — all blocked\n"
             f"• Selected window will be locked fullscreen\n"
-            f"• <b>Emergency exit: TTY (Ctrl+Alt+F2) → pkill -f timer.py</b>\n\n"
+            f"• <b>Emergency exit: TTY (Ctrl+Alt+F2) → pkill focuslock</b>\n\n"
             f"There is no turning back until the timer ends!"
         )
         msg.set_wrap(True)
