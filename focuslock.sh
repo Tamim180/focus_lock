@@ -1,2 +1,2 @@
 #!/bin/bash
-python /usr/lib/focuslock/launcher.py
+exec -a focuslock python /usr/lib/focuslock/launcher.py
