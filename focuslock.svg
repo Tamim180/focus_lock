@@ -1,0 +1,24 @@
+<svg width="256" height="256" viewBox="0 0 680 680" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>FocusLock app icon</title>
+  <desc>A shield with a lock symbol for the FocusLock app</desc>
+
+  <rect width="680" height="680" fill="#1a1a2e" rx="120"/>
+
+  <path d="M340 80 L560 180 L560 380 C560 510 440 610 340 640 C240 610 120 510 120 380 L120 180 Z"
+        fill="#16213e" stroke="#e94560" stroke-width="6" rx="20"/>
+
+  <path d="M340 95 L545 188 L545 380 C545 503 432 598 340 626 C248 598 135 503 135 380 L135 188 Z"
+        fill="#0f3460" opacity="0.8"/>
+
+  <rect x="255" y="330" width="170" height="140" rx="18" fill="#e94560"/>
+
+  <path d="M290 330 L290 285 C290 248 390 248 390 285 L390 330"
+        fill="none" stroke="#e94560" stroke-width="28" stroke-linecap="round"/>
+
+  <circle cx="340" cy="390" r="22" fill="#1a1a2e"/>
+  <rect x="332" y="390" width="16" height="35" rx="8" fill="#1a1a2e"/>
+
+  <circle cx="340" cy="120" r="8" fill="#e94560" opacity="0.6"/>
+  <circle cx="300" cy="135" r="5" fill="#e94560" opacity="0.4"/>
+  <circle cx="380" cy="135" r="5" fill="#e94560" opacity="0.4"/>
+</svg>
