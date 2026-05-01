@@ -282,6 +282,7 @@ class LauncherApp(Gtk.Application):
 
     def on_activate(self, app):
         GLib.set_application_name("FocusLock")
+        Gtk.Window.set_default_icon_name("focuslock")
         win = LauncherWindow(app)
         win.present()
 
