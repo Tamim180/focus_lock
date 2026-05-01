@@ -156,7 +156,7 @@ class WarningDialog(Gtk.Dialog):
 
 class LauncherWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="🔒 FocusLock")
+        super().__init__(application=app, title="FocusLock")
         self.set_default_size(420, 320)
         self.selected_window = {}
         cleanup_files()
@@ -281,6 +281,7 @@ class LauncherApp(Gtk.Application):
         self.connect("activate", self.on_activate)
 
     def on_activate(self, app):
+        GLib.set_application_name("FocusLock")
         win = LauncherWindow(app)
         win.present()
 

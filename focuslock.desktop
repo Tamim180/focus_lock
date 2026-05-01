@@ -2,7 +2,7 @@
 Name=FocusLock
 Comment=Lock a window and stay focused
 Exec=focuslock
-Icon=/usr/share/pixmaps/focuslock.svg
+Icon=focuslock
 Terminal=false
 Type=Application
 Categories=Utility;
