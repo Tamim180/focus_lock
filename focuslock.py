@@ -60,7 +60,6 @@ function lockWindow(win) {{
     lockedWindow = win;
     isLocked = true;
     win.fullScreen = true;
-    win.keepAbove = true;
     win.noBorder = true;
 }}
 
@@ -106,6 +105,7 @@ enforceFocusTimer.start();
         'qdbus', 'org.kde.KWin', '/Scripting',
         'org.kde.kwin.Scripting.start'
     ])
+    print(f"KWin script loaded with ID: {result.stdout.strip()}")
 
 def unload_kwin_script():
     subprocess.run([
@@ -124,7 +124,6 @@ for (var i = 0; i < clients.length; i++) {{
     if (win.resourceClass &&
         win.resourceClass.toLowerCase().includes("{window_class.lower()}")) {{
         win.fullScreen = false;
-        win.keepAbove = false;
         win.noBorder = false;
         break;
     }}
@@ -178,79 +177,10 @@ def emergency_restore(signum, frame):
 signal.signal(signal.SIGTERM, emergency_restore)
 signal.signal(signal.SIGINT, emergency_restore)
 
-class TimerWindow(Gtk.ApplicationWindow):
-    def __init__(self, app, seconds, window_class):
-        super().__init__(application=app, title="FocusLock — Running")
-        self.set_default_size(300, 150)
-        self.set_resizable(False)
-        self.remaining = seconds
-        self.window_class = window_class
-
-        # Block close button
-        self.connect("close-request", self.on_close_request)
-
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        main_box.set_margin_top(20)
-        main_box.set_margin_bottom(20)
-        main_box.set_margin_start(20)
-        main_box.set_margin_end(20)
-        main_box.set_valign(Gtk.Align.CENTER)
-        main_box.set_halign(Gtk.Align.CENTER)
-
-        lock_label = Gtk.Label(label="🔒 Focus Session Active")
-        lock_label.add_css_class("lock-title")
-
-        self.timer_label = Gtk.Label(label=self.format_time(self.remaining))
-        self.timer_label.add_css_class("timer-label")
-
-        self.progress = Gtk.ProgressBar()
-        self.progress.set_fraction(1.0)
-        self.progress.set_size_request(260, 8)
-        self.total = seconds
-
-        main_box.append(lock_label)
-        main_box.append(self.timer_label)
-        main_box.append(self.progress)
-        self.set_child(main_box)
-
-        css_provider = Gtk.CssProvider()
-        css_provider.load_from_string("""
-            .lock-title {
-                font-size: 16px;
-                font-weight: bold;
-            }
-            .timer-label {
-                font-size: 48px;
-                font-weight: bold;
-            }
-        """)
-        Gtk.StyleContext.add_provider_for_display(
-            self.get_display(),
-            css_provider,
-            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-        )
-
-        GLib.timeout_add(1000, self.tick)
-
-    def format_time(self, seconds):
-        m = seconds // 60
-        s = seconds % 60
-        return f"{m:02d}:{s:02d}"
-
-    def tick(self):
-        self.remaining -= 1
-        self.timer_label.set_label(self.format_time(self.remaining))
-        self.progress.set_fraction(self.remaining / self.total)
-
-        if self.remaining <= 0:
-            full_restore(self.window_class)
-            self.get_application().quit()
-            return False
-        return True
-
-    def on_close_request(self, window):
-        # Block closing timer window
-        return True
+def timer_thread(seconds, window_class):
+    time.sleep(seconds)
+    full_restore(window_class)
+    os._exit(0)
 
 class WarningDialog(Gtk.Dialog):
     def __init__(self, parent, minutes, window_name):
@@ -334,8 +264,8 @@ class LauncherWindow(Gtk.ApplicationWindow):
         timer_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         timer_label = Gtk.Label(label="Duration (minutes):")
         self.timer_entry = Gtk.Entry()
-        self.timer_entry.set_placeholder_text("e.g. 25")
-        self.timer_entry.set_max_length(3)
+        self.timer_entry.set_placeholder_text("e.g. 25 or 0.5")
+        self.timer_entry.set_max_length(5)
         self.timer_entry.set_hexpand(True)
         timer_box.append(timer_label)
         timer_box.append(self.timer_entry)
@@ -396,7 +326,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
 
     def on_start(self, button):
         try:
-            minutes = int(self.timer_entry.get_text().strip())
+            minutes = float(self.timer_entry.get_text().strip())
             if minutes <= 0:
                 raise ValueError
         except ValueError:
@@ -422,18 +352,21 @@ class LauncherWindow(Gtk.ApplicationWindow):
 
         window_class = self.selected_window.get('resourceClass', '')
         active_window_class = window_class
-        seconds = minutes * 60
+        seconds = int(minutes * 60)
 
         write_config(window_class)
         load_kwin_script(window_class)
         block_shortcuts()
 
-        # Open timer window
-        timer_win = TimerWindow(self.get_application(), seconds, window_class)
-        timer_win.present()
+        # Non-daemon thread keeps process alive after UI closes
+        t = threading.Thread(
+            target=timer_thread,
+            args=(seconds, window_class),
+            daemon=False
+        )
+        t.start()
 
-        # Close launcher window
-        self.destroy()
+        self.get_application().quit()
 
 class FocusLockApp(Gtk.Application):
     def __init__(self):
