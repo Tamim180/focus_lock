@@ -15,8 +15,13 @@ import gi
 import os
 import subprocess
 import threading
+import time
+import signal
+import sys
 gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk, GLib
+
+active_window_class = ''
 
 def pick_window():
     result = subprocess.run(
@@ -34,6 +39,12 @@ def block_shortcuts():
     subprocess.run([
         'qdbus', 'org.kde.kglobalaccel',
         '/kglobalaccel', 'blockGlobalShortcuts', 'true'
+    ])
+
+def restore_shortcuts():
+    subprocess.run([
+        'qdbus', 'org.kde.kglobalaccel',
+        '/kglobalaccel', 'blockGlobalShortcuts', 'false'
     ])
 
 def write_config(window_class):
@@ -96,7 +107,52 @@ enforceFocusTimer.start();
         'org.kde.kwin.Scripting.start'
     ])
 
-    print(f"KWin script loaded with ID: {result.stdout.strip()}")
+def unload_kwin_script():
+    subprocess.run([
+        'qdbus', 'org.kde.KWin', '/Scripting',
+        'org.kde.kwin.Scripting.unloadScript',
+        'focuslockrunning'
+    ])
+
+def restore_window(window_class):
+    if not window_class:
+        return
+    script = f"""
+var clients = workspace.windowList();
+for (var i = 0; i < clients.length; i++) {{
+    var win = clients[i];
+    if (win.resourceClass &&
+        win.resourceClass.toLowerCase().includes("{window_class.lower()}")) {{
+        win.fullScreen = false;
+        win.keepAbove = false;
+        win.noBorder = false;
+        break;
+    }}
+}}
+"""
+    with open('/tmp/focuslock_restore.js', 'w') as f:
+        f.write(script)
+
+    subprocess.run([
+        'qdbus', 'org.kde.KWin', '/Scripting',
+        'org.kde.kwin.Scripting.loadScript',
+        '/tmp/focuslock_restore.js',
+        'focuslockRestore'
+    ])
+    subprocess.run([
+        'qdbus', 'org.kde.KWin', '/Scripting',
+        'org.kde.kwin.Scripting.start'
+    ])
+    time.sleep(1)
+    subprocess.run([
+        'qdbus', 'org.kde.KWin', '/KWin',
+        'org.kde.KWin.reconfigure'
+    ])
+    subprocess.run([
+        'qdbus', 'org.kde.KWin', '/Scripting',
+        'org.kde.kwin.Scripting.unloadScript',
+        'focuslockRestore'
+    ])
 
 def cleanup_files():
     for f in ['/tmp/focuslock.conf',
@@ -106,6 +162,95 @@ def cleanup_files():
             os.remove(f)
         except:
             pass
+
+def full_restore(window_class):
+    unload_kwin_script()
+    time.sleep(0.5)
+    restore_window(window_class)
+    restore_shortcuts()
+    cleanup_files()
+
+def emergency_restore(signum, frame):
+    print("Emergency restore triggered!")
+    full_restore(active_window_class)
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, emergency_restore)
+signal.signal(signal.SIGINT, emergency_restore)
+
+class TimerWindow(Gtk.ApplicationWindow):
+    def __init__(self, app, seconds, window_class):
+        super().__init__(application=app, title="FocusLock — Running")
+        self.set_default_size(300, 150)
+        self.set_resizable(False)
+        self.remaining = seconds
+        self.window_class = window_class
+
+        # Block close button
+        self.connect("close-request", self.on_close_request)
+
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        main_box.set_margin_top(20)
+        main_box.set_margin_bottom(20)
+        main_box.set_margin_start(20)
+        main_box.set_margin_end(20)
+        main_box.set_valign(Gtk.Align.CENTER)
+        main_box.set_halign(Gtk.Align.CENTER)
+
+        lock_label = Gtk.Label(label="🔒 Focus Session Active")
+        lock_label.add_css_class("lock-title")
+
+        self.timer_label = Gtk.Label(label=self.format_time(self.remaining))
+        self.timer_label.add_css_class("timer-label")
+
+        self.progress = Gtk.ProgressBar()
+        self.progress.set_fraction(1.0)
+        self.progress.set_size_request(260, 8)
+        self.total = seconds
+
+        main_box.append(lock_label)
+        main_box.append(self.timer_label)
+        main_box.append(self.progress)
+        self.set_child(main_box)
+
+        css_provider = Gtk.CssProvider()
+        css_provider.load_from_string("""
+            .lock-title {
+                font-size: 16px;
+                font-weight: bold;
+            }
+            .timer-label {
+                font-size: 48px;
+                font-weight: bold;
+            }
+        """)
+        Gtk.StyleContext.add_provider_for_display(
+            self.get_display(),
+            css_provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+        GLib.timeout_add(1000, self.tick)
+
+    def format_time(self, seconds):
+        m = seconds // 60
+        s = seconds % 60
+        return f"{m:02d}:{s:02d}"
+
+    def tick(self):
+        self.remaining -= 1
+        self.timer_label.set_label(self.format_time(self.remaining))
+        self.progress.set_fraction(self.remaining / self.total)
+
+        if self.remaining <= 0:
+            full_restore(self.window_class)
+            self.get_application().quit()
+            return False
+        return True
+
+    def on_close_request(self, window):
+        # Block closing timer window
+        return True
 
 class WarningDialog(Gtk.Dialog):
     def __init__(self, parent, minutes, window_name):
@@ -270,27 +415,29 @@ class LauncherWindow(Gtk.ApplicationWindow):
         dialog.connect("response", self.on_warning_response, minutes)
 
     def on_warning_response(self, dialog, response, minutes):
+        global active_window_class
         dialog.destroy()
         if response != Gtk.ResponseType.OK:
             return
 
         window_class = self.selected_window.get('resourceClass', '')
+        active_window_class = window_class
         seconds = minutes * 60
 
         write_config(window_class)
         load_kwin_script(window_class)
         block_shortcuts()
 
-        # Hardcoded path so it works from both terminal and app menu
-        subprocess.Popen(
-            ['python', '/usr/lib/focuslock/timer.py', str(seconds)]
-        )
+        # Open timer window
+        timer_win = TimerWindow(self.get_application(), seconds, window_class)
+        timer_win.present()
 
-        self.get_application().quit()
+        # Close launcher window
+        self.destroy()
 
-class LauncherApp(Gtk.Application):
+class FocusLockApp(Gtk.Application):
     def __init__(self):
-        super().__init__(application_id="com.focuslock.launcher")
+        super().__init__(application_id="com.focuslock.app")
         self.connect("activate", self.on_activate)
 
     def on_activate(self, app):
@@ -299,5 +446,5 @@ class LauncherApp(Gtk.Application):
         win = LauncherWindow(app)
         win.present()
 
-app = LauncherApp()
+app = FocusLockApp()
 app.run()
