@@ -281,9 +281,9 @@ class LauncherWindow(Gtk.ApplicationWindow):
         load_kwin_script(window_class)
         block_shortcuts()
 
-        script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Hardcoded path so it works from both terminal and app menu
         subprocess.Popen(
-            ['python', os.path.join(script_dir, 'timer.py'), str(seconds)]
+            ['python', '/usr/lib/focuslock/timer.py', str(seconds)]
         )
 
         self.get_application().quit()
